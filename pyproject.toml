@@ -1,43 +1,86 @@
-[tool.poetry]
+[project]
 name = "auto-circuit"
-version = "0.1.0"  # This isn't used. Version set during Github action.
+version = "0.1.0"
 description = ""
-authors = ["UFO-101 <josephmiller101@gmail.com>"]
+authors = [{ name = "UFO-101", email = "josephmiller101@gmail.com" }]
+requires-python = ">=3.10,<3.13"
 readme = "README.md"
-packages = [{include = "auto_circuit"}]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "transformer-lens>=1.13.0",
+    "einops>=0.6.1",
+    "ordered-set>=4.1.0",
+    "plotly>=5.18.0",
+    "kaleido==0.2.1",
+    "blobfile>=2.0.2",
+    "word2word>=1.0.0",
+    "vscode-tqdm>=4.66.2",
+    "tracr-pypi>=1.0.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-torch = ">=2.1.1"
-transformer-lens = ">=1.13.0"
-einops = ">=0.6.1"
-ordered-set = ">=4.1.0"
-plotly = ">=5.18.0"
-kaleido = "==0.2.1"  # Improved renderer for plotly
-blobfile = ">=2.0.2"
-word2word = ">=1.0.0"
-vscode-tqdm = ">=4.66.2"  # My fork of tqdm that works in VSCode
-tracr-pypi = ">=1.0.0"  # My fork of tracr that is exactly the same (but on PyPI)
+[dependency-groups]
+dev = [
+    "pre-commit>=3.3.3,<4",
+    "ipykernel>=6.25.0,<7",
+    "ipywidgets>=8.1.0,<9",
+    "jupyter>=1.0.0,<2",
+    "pytest>=7.4.0,<8",
+    "pyright>=1.1.350,<2",
+    "ipytest>=0.13.3,<0.14",
+]
+docs = [
+    "mkdocs-material>=9.5.17,<10",
+    "mkdocstrings[python]>=0.24.3,<0.25",
+    "mkdocs-gen-files>=0.5.0,<0.6",
+]
 
-[tool.poetry.group.dev.dependencies]
-pre-commit = "^3.3.3"
-ipykernel = "^6.25.0"
-ipywidgets = "^8.1.0"
-jupyter = "^1.0.0"
-pytest = "^7.4.0"
-pyright = "^1.1.350"
-ipytest = "^0.13.3"
-# torch-tb-profiler = "^0.4.1"
+[project.optional-dependencies]
+cpu = [
+  "torch>=2.8.0",
+  "torchvision",
+]
+cuda129 = [
+  "torch>=2.8.0",
+  "torchvision",
+]
+rocm64 = [
+  "torch>=2.8.0",
+  "torchvision",
+  "pytorch-triton-rocm>=3.1.0 ; sys_platform == 'linux'", 
+  "triton-rocm>=3.0.0 ; sys_platform == 'linux'",
+]
+rocm71 = [
+  "torch>=2.8.0",
+  "torchvision",
+  "pytorch-triton-rocm>=3.1.0 ; sys_platform == 'linux'", 
+  "triton-rocm>=3.0.0 ; sys_platform == 'linux'",
+]
 
 
-[tool.poetry.group.docs.dependencies]
-mkdocs-material = "^9.5.17"
-mkdocstrings = {extras = ["python"], version = "^0.24.3"}
-mkdocs-gen-files = "^0.5.0"
+[tool.uv]
+default-groups = "all"
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cuda129" },
+    { extra = "rocm64" },
+    { extra = "rocm71" }
+  ],
+]
+
+[tool.uv.build-backend]
+module-name = ["auto_circuit"]
+module-root = ""
+namespace = true
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
 
 [tool.ruff]
 # pyflakes, pycodestyle, isort
@@ -50,3 +93,46 @@ reportUnknownParameterType = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cuda129", extra = "cuda129" },
+  { index = "pytorch-rocm64", extra = "rocm64", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-rocm71", extra = "rocm71", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cuda129", extra = "cuda129" },
+  { index = "pytorch-rocm64", extra = "rocm64", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-rocm71", extra = "rocm71", marker = "sys_platform == 'linux'" },
+]
+
+pytorch-triton-rocm = [
+  { index = "pytorch-rocm64", extra = "rocm64", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-rocm71", extra = "rocm71", marker = "sys_platform == 'linux'" },
+]
+triton-rocm = [
+  { index = "pytorch-rocm64", extra = "rocm64", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-rocm71", extra = "rocm71", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm64"
+url = "https://download.pytorch.org/whl/rocm6.4"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm71"
+url = "https://download.pytorch.org/whl/rocm7.1"
+explicit = true
