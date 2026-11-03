@@ -3,9 +3,10 @@ from enum import Enum
 from typing import Literal, Optional, Tuple
 
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.data import load_datasets_from_json
+from auto_circuit.model_utils.transformer_lens_utils import enable_graph_hooks
 from auto_circuit.metrics.official_circuits.circuits.ioi_official import (
     ioi_head_based_official_edges,
     ioi_true_edges,
@@ -25,23 +26,15 @@ from auto_circuit.utils.graph_utils import patchable_model
 from auto_circuit.utils.misc import repo_path_to_abs_path
 
 
-def load_tl_model(name: str, device: t.device) -> tl.HookedTransformer:
+def load_tl_model(name: str, device: t.device) -> TransformerBridge:
     """
     Load a `HookedTransformer` model with the necessary config to perform edge patching
     (with separate edges to Q, K, and V). Sets `requires_grad` to `False` for all model
     weights (this does not affect Mask gradients).
     """
-    tl_model = tl.HookedTransformer.from_pretrained(
-        name,
-        device=device,
-        fold_ln=True,
-        center_writing_weights=True,
-        center_unembed=True,
-    )
-    tl_model.cfg.use_attn_result = True
-    tl_model.cfg.use_attn_in = True
-    tl_model.cfg.use_split_qkv_input = True
-    tl_model.cfg.use_hook_mlp_in = True
+    tl_model = TransformerBridge.boot_transformers(name, device=device)
+    tl_model.enable_compatibility_mode()
+    enable_graph_hooks(tl_model)
     tl_model.eval()
     for param in tl_model.parameters():
         param.requires_grad = False
@@ -73,7 +66,7 @@ class IOI_CIRCUIT_TYPE(Enum):
 
 
 def ioi_circuit_single_template_logit_diff_percent(
-    gpt2: tl.HookedTransformer,
+    gpt2: TransformerBridge,
     dataset_size: int,
     prepend_bos: bool,
     template: Literal["ABBA", "BABA"],

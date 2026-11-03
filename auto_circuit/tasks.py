@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, get_args
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.data import PromptDataLoader, load_datasets_from_json
 from auto_circuit.metrics.official_circuits.circuits.docstring_official import (
@@ -29,7 +29,7 @@ from auto_circuit.model_utils.sparse_autoencoders.autoencoder_transformer import
     AutoencoderTransformer,
     sae_model,
 )
-from auto_circuit.model_utils.tracr_model_utils import TRACR_TASK_KEY, get_tracr_model
+from auto_circuit.model_utils.transformer_lens_utils import enable_graph_hooks
 from auto_circuit.types import AutoencoderInput, Edge, OutputSlice, TaskKey
 from auto_circuit.utils.graph_utils import patchable_model
 from auto_circuit.utils.misc import repo_path_to_abs_path
@@ -149,31 +149,20 @@ class Task:
         if isinstance(self._model_def, t.nn.Module):
             model = self._model_def
             self.device: t.device = next(model.parameters()).device
-        elif model_cache_key in MODEL_CACHE:
-            model = MODEL_CACHE[model_cache_key]
-            self.device: t.device = next(model.parameters()).device
-            using_cached_model = True
         else:
             device_str = "cuda" if t.cuda.is_available() else "cpu"
             self.device: t.device = t.device(device_str)
-            if self._model_def in get_args(TRACR_TASK_KEY):
-                model = get_tracr_model(self._model_def, device_str)[0]  # type: ignore
-            elif self.dtype != t.float32:
-                model = tl.HookedTransformer.from_pretrained_no_processing(
-                    self._model_def, device=self.device, dtype=self.dtype
+            if self._model_def not in ("gpt2", "gpt2-small", "openai-community/gpt2"):
+                raise NotImplementedError(
+                    f"Graph tasks are validated only for GPT-2 bridges, not "
+                    f"{self._model_def!r}"
                 )
-            else:
-                model = tl.HookedTransformer.from_pretrained(
-                    self._model_def,
-                    device=self.device,
-                    fold_ln=True,
-                    center_writing_weights=True,
-                    center_unembed=True,
-                )
-            model.cfg.use_attn_result = True
-            model.cfg.use_attn_in = True
-            model.cfg.use_split_qkv_input = True
-            model.cfg.use_hook_mlp_in = True
+            model = TransformerBridge.boot_transformers(
+                "openai-community/gpt2", device=self.device, dtype=self.dtype
+            )
+            if self.dtype == t.float32:
+                model.enable_compatibility_mode()
+            enable_graph_hooks(model, separate_qkv=self.separate_qkv is not False)
             model.eval()
 
             if self.autoencoder_input is not None:
@@ -184,7 +173,8 @@ class Task:
                     pythia_size=self.autoencoder_pythia_size,
                     new_instance=False,
                 )
-            MODEL_CACHE[model_cache_key] = model
+            # Bridge patching installs permanent hook callbacks. Never reuse an
+            # already-patched bridge for another task with different graph state.
 
         for param in model.parameters():
             param.requires_grad = False

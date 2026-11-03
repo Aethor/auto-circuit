@@ -27,7 +27,7 @@ import random
 from typing import Dict, List
 
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.utils.misc import repo_path_to_abs_path
 
@@ -56,7 +56,7 @@ sport_prompts: Dict[str, List[str]] = {
 MODEL_NAME = "pythia-2.8b-deduped"
 
 device = "cuda" if t.cuda.is_available() else "cpu"
-model = tl.HookedTransformer.from_pretrained(MODEL_NAME, device=device)
+model = TransformerBridge.boot_transformers(MODEL_NAME, device=device)
 
 #%%
 name_length = 3

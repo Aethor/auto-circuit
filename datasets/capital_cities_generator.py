@@ -4,7 +4,7 @@ import random
 
 import requests
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 url = "https://raw.githubusercontent.com/icyrockcom/country-capitals/master/data/country-list.json"
 country_capital_data = requests.get(url).json()
@@ -16,7 +16,7 @@ TEMPLATE = "The capital of {country} is the city of"
 MODEL_NAME = "pythia-70m-deduped"
 
 passed_countries = []
-model = tl.HookedTransformer.from_pretrained(MODEL_NAME, device="cpu")
+model = TransformerBridge.boot_transformers(MODEL_NAME, device="cpu")
 
 prompts = [TEMPLATE.format(country=country) for country in country_to_captial]
 answers = [" " + city for city in country_to_captial.values()]

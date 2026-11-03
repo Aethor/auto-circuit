@@ -1,17 +1,18 @@
 #%%
 import json
+from copy import deepcopy
 
 import pytest
 import torch as t
-import transformer_lens as tl
-from transformer_lens.utils import get_attention_mask
+from transformer_lens.model_bridge import TransformerBridge
+from transformer_lens.utilities import get_attention_mask
 
 from auto_circuit.data import load_datasets_from_json
 from auto_circuit.utils.misc import repo_path_to_abs_path
 from tests.conftest import DEVICE
 
 
-def test_tail_divergence(gpt2: tl.HookedTransformer):
+def test_tail_divergence(gpt2: TransformerBridge):
     dataset_path = repo_path_to_abs_path(
         "datasets/ioi/ioi_vanilla_template_prompts.json"
     )
@@ -43,7 +44,7 @@ def test_tail_divergence(gpt2: tl.HookedTransformer):
         assert kv_batch.clean.shape[0] == no_cache_batch.clean.shape[0]
         assert kv_batch.clean.shape[1] + diverge_idx == no_cache_batch.clean.shape[1]
         assert t.equal(kv_batch.clean, no_cache_batch.clean[:, diverge_idx:])
-        kv_out = gpt2(kv_batch.clean, past_kv_cache=kv_cache)
+        kv_out = gpt2(kv_batch.clean, past_key_values=deepcopy(kv_cache))
         no_cache_out = gpt2(no_cache_batch.clean)
         assert kv_out.shape[0] == no_cache_out.shape[0]
         assert kv_out.shape[1] + diverge_idx == no_cache_out.shape[1]
@@ -58,7 +59,7 @@ def test_tail_divergence(gpt2: tl.HookedTransformer):
     ],
 )
 def test_tail_divergence_only_strips_a_cacheable_prefix(
-    gpt2: tl.HookedTransformer, dataset_name: str, expected_diverge_idx: int
+    gpt2: TransformerBridge, dataset_name: str, expected_diverge_idx: int
 ):
     """A cached position must hold the same token in every prompt and be
     attended by every prompt.
@@ -113,7 +114,7 @@ def test_tail_divergence_only_strips_a_cacheable_prefix(
     )
 
 
-def test_determinism_same_seed(gpt2: tl.HookedTransformer):
+def test_determinism_same_seed(gpt2: TransformerBridge):
     dataset_path = repo_path_to_abs_path(
         "datasets/ioi/ioi_vanilla_template_prompts.json"
     )
@@ -151,7 +152,7 @@ def test_determinism_same_seed(gpt2: tl.HookedTransformer):
         assert t.equal(batch_1.wrong_answers, batch_2.wrong_answers)
 
 
-def test_determinism_different_seeds(gpt2: tl.HookedTransformer):
+def test_determinism_different_seeds(gpt2: TransformerBridge):
     dataset_path = repo_path_to_abs_path(
         "datasets/ioi/ioi_vanilla_template_prompts.json"
     )

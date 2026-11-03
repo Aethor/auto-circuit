@@ -3,7 +3,7 @@ import random
 from typing import Dict
 
 import pytest
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 from typing_extensions import Literal
 
 from auto_circuit.experiment_utils import (
@@ -98,7 +98,7 @@ IOI_TRUE_RESULTS: Dict[bool, Dict[str, Dict[int, float]]] = {
 
 
 def test_ioi_faithfulness_exact_repro(
-    gpt2: tl.HookedTransformer, random_seed: int = 0, debug: bool = False
+    gpt2: TransformerBridge, random_seed: int = 0, debug: bool = False
 ):
     """
     These tests check that we can exactly reproduce the faithfulness results of the IOI

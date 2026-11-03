@@ -209,6 +209,10 @@ class Node:
         Returns:
             The `PatchWrapper` for this node.
         """
+        if hasattr(model, "wrappers"):
+            for wrapper in model.wrappers:
+                if wrapper.module_name == self.module_name:
+                    return wrapper
         patch_wrapper = module_by_name(model, self.module_name)
         assert isinstance(patch_wrapper, PatchWrapper)
         return patch_wrapper

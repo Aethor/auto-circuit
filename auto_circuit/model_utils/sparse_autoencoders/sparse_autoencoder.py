@@ -6,7 +6,7 @@ from blobfile import BlobFile
 from einops import einsum
 from torch.nn.init import kaiming_uniform_
 from transformer_lens.hook_points import HookPoint
-from transformer_lens.HookedTransformer import HookedTransformer
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.types import AutoencoderInput
 from auto_circuit.utils.misc import repo_path_to_abs_path
@@ -134,7 +134,7 @@ STATE_DICT_MAPS = {
 
 def load_autoencoder(
     wrapped_hook: HookPoint,
-    model: HookedTransformer,
+    model: TransformerBridge,
     layer_idx: int,
     autoencoder_input: AutoencoderInput,
     pythia_size: Optional[str] = None,

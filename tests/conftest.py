@@ -2,7 +2,10 @@ from typing import Any, Optional
 
 import pytest
 import torch as t
-import transformer_lens as tl
+from transformers import GPT2Config, GPT2LMHeadModel
+from transformer_lens.model_bridge import TransformerBridge
+
+from auto_circuit.model_utils.transformer_lens_utils import enable_graph_hooks
 
 from auto_circuit.data import PromptDataLoader, load_datasets_from_json
 from auto_circuit.model_utils.micro_model_utils import MicroModel
@@ -32,43 +35,27 @@ def pytest_collection_modifyitems(config: Any, items: Any):
 
 
 @pytest.fixture(scope="session")
-def mini_tl_transformer() -> tl.HookedTransformer:
-    cfg = tl.HookedTransformerConfig(
-        d_vocab=50257,
-        n_layers=2,
-        d_model=4,  # DON'T SET THIS TO 2 OR LAYERNORM WILL RUIN EVERYTHING
-        n_ctx=64,
-        n_heads=2,
-        d_head=2,
-        act_fn="gelu",
-        tokenizer_name="gpt2",
-        device=str(DEVICE),
+def mini_tl_transformer() -> TransformerBridge:
+    hf = GPT2LMHeadModel(
+        GPT2Config(n_layer=2, n_embd=16, n_head=2, n_positions=64, vocab_size=128)
+    ).to(DEVICE).eval()
+    model = TransformerBridge.boot_transformers(
+        "gpt2", hf_model=hf, device=str(DEVICE)
     )
-    mini_tl_model = tl.HookedTransformer(cfg)
-    model = mini_tl_model
-    model.init_weights()
-    model.tokenizer.padding_side = "left"  # type: ignore
-    model.cfg.use_attn_result = True
-    model.cfg.use_attn_in = True
-    model.cfg.use_split_qkv_input = True
-    model.cfg.use_hook_mlp_in = True
+    enable_graph_hooks(model)
+    model.eval()
     return model
 
 
 def get_transformer(
     request: Optional[pytest.FixtureRequest], model_name: Optional[str] = None
-) -> tl.HookedTransformer:
+) -> TransformerBridge:
     name = request.param if request is not None else None
     if name is None:
         assert model_name is not None
         name = model_name
-    model = tl.HookedTransformer.from_pretrained_no_processing(
-        name, center_writing_weights=False, device=str(DEVICE)
-    )
-    model.cfg.use_attn_result = True
-    model.cfg.use_attn_in = True
-    model.cfg.use_split_qkv_input = True
-    model.cfg.use_hook_mlp_in = True
+    model = TransformerBridge.boot_transformers(name, device=str(DEVICE))
+    enable_graph_hooks(model)
     for param in model.parameters():
         param.requires_grad = False
     return model
@@ -77,12 +64,12 @@ def get_transformer(
 @pytest.fixture(scope="session")
 def hooked_transformer(
     request: pytest.FixtureRequest, model_name: Optional[str] = None
-) -> tl.HookedTransformer:
+) -> TransformerBridge:
     return get_transformer(request, model_name)
 
 
 @pytest.fixture(scope="session")
-def gpt2() -> tl.HookedTransformer:
+def gpt2() -> TransformerBridge:
     return get_transformer(None, "gpt2")
 
 

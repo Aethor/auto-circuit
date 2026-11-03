@@ -9,7 +9,8 @@ from auto_circuit.utils.graph_utils import patch_mode, patchable_model
 from auto_circuit.utils.misc import repo_path_to_abs_path
 from auto_circuit.visualize import draw_seq_graph
 
-device = t.device("cuda" if t.cuda.is_available() else "cpu")
+# device = t.device("cuda" if t.cuda.is_available() else "cpu")
+device = t.device("cpu")
 model = load_tl_model("gpt2", device)
 
 path = repo_path_to_abs_path("datasets/ioi/ioi_vanilla_template_prompts.json")

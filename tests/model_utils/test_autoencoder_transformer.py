@@ -3,7 +3,7 @@ from typing import Optional
 
 import pytest
 import torch as t
-from transformer_lens import HookedTransformer
+from transformer_lens.model_bridge import TransformerBridge as HookedTransformer
 from transformer_lens.hook_points import HookPoint
 
 from auto_circuit.data import load_datasets_from_json

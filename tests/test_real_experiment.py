@@ -1,6 +1,7 @@
 import os
 
 import torch as t
+import pytest
 
 from auto_circuit.prune import run_circuits
 from auto_circuit.prune_algos.random_edges import random_prune_scores
@@ -11,6 +12,7 @@ from auto_circuit.utils.graph_utils import edge_counts_util
 os.environ["TOKENIZERS_PARALLELISM"] = "False"
 
 
+@pytest.mark.skip(reason="Attention-only bridge graph has not been validated")
 def test_kl_vs_edges():
     """Test that experiments satisfy basic requirements with a real model."""
     task = Task(

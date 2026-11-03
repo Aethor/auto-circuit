@@ -2,7 +2,9 @@
 import os
 from typing import List, Set
 
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
+
+from auto_circuit.model_utils.transformer_lens_utils import enable_graph_hooks
 
 from auto_circuit.model_utils.micro_model_utils import MicroModel
 from auto_circuit.types import Edge, EdgeCounts
@@ -11,7 +13,8 @@ from auto_circuit.utils.graph_utils import edge_counts_util, patchable_model
 os.environ["TOKENIZERS_PARALLELISM"] = "False"
 
 
-def test_edge_counts_util(mini_tl_transformer: tl.HookedTransformer):
+def test_edge_counts_util(mini_tl_transformer: TransformerBridge):
+    enable_graph_hooks(mini_tl_transformer, separate_qkv=False)
     model = patchable_model(mini_tl_transformer, factorized=True, separate_qkv=False)
     edges: Set[Edge] = model.edges
 

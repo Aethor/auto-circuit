@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
-from transformer_lens import HookedTransformer
+from transformer_lens.model_bridge import TransformerBridge
 from typeguard import typechecked
 
 variable_names = "data name file value test new result line user key default request path output node item url model response text version function log string field start number values sub index error current context image message check json create size event state row obj parser end files form query fields instance label run action target array code num table source msg config first required options ret update module status group content client filename results last read command val base format color settings order found count match tag title parent call session token server host date description mode expected project info valid page header option task shape load names port old resource root".split(
@@ -779,7 +779,7 @@ class Prompt:
 
 class BatchedPrompts:
     @typechecked
-    def __init__(self, prompts: List[Prompt], model: HookedTransformer):
+    def __init__(self, prompts: List[Prompt], model: TransformerBridge):
         self.clean_prompt = [p.clean_prompt for p in prompts]
         if isinstance(prompts[0].corrupt_prompt, str):
             self.corrupt_prompt = [p.corrupt_prompt for p in prompts]

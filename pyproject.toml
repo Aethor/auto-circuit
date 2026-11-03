@@ -12,7 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "transformer-lens>=1.13.0",
+    "transformer-lens>=4.0.0,<5",
     "einops>=0.6.1",
     "ordered-set>=4.1.0",
     "plotly>=5.18.0",

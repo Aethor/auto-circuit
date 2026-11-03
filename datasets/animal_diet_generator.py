@@ -3,7 +3,7 @@ import json
 from random import choice
 from typing import Any, Dict, List, Tuple
 
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 CLEAN_PROMPT_ANIMAL = "cows"  # "squirrels"  # "birds" # "mice"
 ANSWER = " grass"  # " nuts"  # " worms" # " cheese"
@@ -107,7 +107,7 @@ def generate_prompts(N: int, short: bool = True) -> Dict[str, Any]:
 with open("animal_diet_short_prompts.json", "w") as f:
     json.dump(generate_prompts(1000, short=True), f)
 #%%
-model = tl.HookedTransformer.from_pretrained("gpt2")
+model = TransformerBridge.boot_transformers("gpt2")
 ANIMALS_WITH_SPACE = [" " + animal for animal in ANIMALS.keys()]
 WRONG_ANSWERS_WITH_SPACE = [" " + animal for animal in ANIMALS.values()]
 for word_list in [ANIMALS_WITH_SPACE, WRONG_ANSWERS_WITH_SPACE]:

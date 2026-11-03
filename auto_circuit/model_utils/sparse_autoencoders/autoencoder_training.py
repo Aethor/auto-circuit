@@ -3,7 +3,7 @@ from typing import Any, Dict, Tuple
 
 import plotly.express as px
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding
 
@@ -22,8 +22,8 @@ from datasets import Dataset, load_dataset
 
 def get_model_and_data(
     model_name: str, dataset_name: str, batch_size: int
-) -> Tuple[tl.HookedTransformer, DataLoader[Any]]:
-    model = tl.HookedTransformer.from_pretrained_no_processing(model_name)
+) -> Tuple[TransformerBridge, DataLoader[Any]]:
+    model = TransformerBridge.boot_transformers(model_name)
     cache_dir = repo_path_to_abs_path(".dataset_cache").resolve()
     text_dataset = load_dataset(dataset_name, split="train", cache_dir=str(cache_dir))
     assert isinstance(text_dataset, Dataset)
@@ -43,7 +43,7 @@ def get_model_and_data(
 
 
 def train_model(
-    model: tl.HookedTransformer,
+    model: TransformerBridge,
     dataloader: PromptDataLoader,
     n_latents: int,
     l1_lambda: float,
@@ -126,7 +126,7 @@ model_name, dataset_name = (
     "pythia-70m-deduped",
     "datasets/capital_cities_pythia-70m-deduped_prompts.json",
 )
-model = tl.HookedTransformer.from_pretrained_no_processing(model_name)
+model = TransformerBridge.boot_transformers(model_name)
 assert model.cfg.device is not None
 train_dataloader, test_dataloader = load_datasets_from_json(
     model,

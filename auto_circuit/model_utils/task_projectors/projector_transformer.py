@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Any, List, Optional
 
 import torch as t
-from transformer_lens import HookedTransformer
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.model_utils.task_projectors.task_projector import TaskProjector
 from auto_circuit.types import AutoencoderInput, MaskFn
@@ -26,7 +26,7 @@ class ProjectorTransformer(t.nn.Module):
         layernorm: bool = False,
     ):
         super().__init__()
-        self.projectors = projectors
+        self.projectors = t.nn.ModuleList(projectors)
         self.layer_idxs = layer_idxs
         self.seq_idxs = seq_idxs
         self.layernorm = layernorm
@@ -78,7 +78,7 @@ class ProjectorTransformer(t.nn.Module):
 
 
 def get_projector_model(
-    model: HookedTransformer,
+    model: TransformerBridge,
     projector_input: AutoencoderInput,
     mask_fn: MaskFn,
     load_pretrained: bool,
@@ -92,7 +92,9 @@ def get_projector_model(
     if new_instance:
         model = deepcopy(model)
     if layer_idxs is None:
-        layer_idxs = list(range(model.cfg.n_layers + 1))
+        layer_idxs = list(range(model.cfg.n_layers))
+    if any(idx < 0 or idx >= model.cfg.n_layers for idx in layer_idxs):
+        raise ValueError("Projector layer indices must refer to existing blocks")
     projectors: List[TaskProjector] = []
     n_inputs = model.cfg.d_model
     for layer_idx in layer_idxs:
@@ -101,7 +103,6 @@ def get_projector_model(
             hook_module = model.blocks[layer_idx].mlp
             hook_name = "hook_post"
         elif projector_input == "resid":
-            assert model.cfg.use_attn_in
             if layer_idx == model.cfg.n_layers - 1:
                 hook_point = model.blocks[layer_idx].hook_resid_post
                 hook_module = model.blocks[layer_idx]
@@ -126,14 +127,21 @@ def get_projector_model(
             filename = filename_pt_1 + filename_pt_2 + filename_pt_3
             state_dict = t.load(folder / filename, map_location=model.cfg.device)
             projector = TaskProjector.from_state_dict(
-                hook_point, state_dict, seq_idxs, mask_fn
+                t.nn.Identity(), state_dict, seq_idxs, mask_fn
             )
         else:
             projector = TaskProjector(
-                hook_point, n_inputs, seq_idxs, mask_fn, layernorm
+                t.nn.Identity(),
+                model.cfg.d_mlp if projector_input == "mlp_post_act" else n_inputs,
+                seq_idxs,
+                mask_fn,
+                layernorm,
             )
         projector.to(model.cfg.device)
-        setattr(hook_module, hook_name, projector)
+        hook_point.add_hook(
+            lambda activation, hook, projector=projector: projector(activation),
+            is_permanent=True,
+        )
         projectors.append(projector)
 
     return ProjectorTransformer(model, projectors, layer_idxs, seq_idxs)

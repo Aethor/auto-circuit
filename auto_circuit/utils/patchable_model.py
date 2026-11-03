@@ -1,8 +1,11 @@
 from collections import defaultdict
-from typing import Any, Collection, Dict, List, Optional, Set, Tuple
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any, Collection, Dict, List, Optional, Set, Tuple
 
 import torch as t
-from transformer_lens.past_key_value_caching import HookedTransformerKeyValueCache
+
+if TYPE_CHECKING:
+    from transformers.cache_utils import Cache
 
 from auto_circuit.types import DestNode, Edge, Node, PruneScores, SrcNode
 from auto_circuit.utils.patch_wrapper import PatchWrapperImpl
@@ -74,7 +77,7 @@ class PatchableModel(t.nn.Module):
     is_factorized: bool
     is_transformer: bool
     separate_qkv: Optional[bool]
-    kv_caches: Optional[Dict[int, HookedTransformerKeyValueCache]]
+    kv_caches: Optional[Dict[int, "Cache"]]
     wrapped_model: t.nn.Module
 
     def __init__(
@@ -93,7 +96,7 @@ class PatchableModel(t.nn.Module):
         is_factorized: bool,
         is_transformer: bool,
         separate_qkv: Optional[bool],
-        kv_caches: Tuple[Optional[HookedTransformerKeyValueCache], ...],
+        kv_caches: Tuple[Optional["Cache"], ...],
         wrapped_model: t.nn.Module,
     ) -> None:
         super().__init__()
@@ -126,8 +129,9 @@ class PatchableModel(t.nn.Module):
             self.kv_caches = {}
             for kv_cache in kv_caches:
                 if kv_cache is not None:
-                    batch_size = kv_cache.previous_attention_mask.shape[0]
+                    batch_size = kv_cache.layers[0].keys.shape[0]
                     self.kv_caches[batch_size] = kv_cache
+        self._patch_modules = t.nn.ModuleList(wrappers)
         self.wrapped_model = wrapped_model
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
@@ -135,12 +139,12 @@ class PatchableModel(t.nn.Module):
         Wrapper around the forward method of the wrapped model. If `kv_caches` is not
         `None`, the KV cache is passed to the wrapped model as a keyword argument.
         """
-        if self.kv_caches is None or "past_kv_cache" in kwargs:
+        if self.kv_caches is None or "past_key_values" in kwargs:
             return self.wrapped_model(*args, **kwargs)
         else:
             batch_size = args[0].shape[0]
             kv = self.kv_caches[batch_size]
-            return self.wrapped_model(*args, past_kv_cache=kv, **kwargs)
+            return self.wrapped_model(*args, past_key_values=deepcopy(kv), **kwargs)
 
     def run_with_cache(self, *args: Any, **kwargs: Any) -> Any:
         """
@@ -153,7 +157,7 @@ class PatchableModel(t.nn.Module):
         else:
             batch_size = args[0].shape[0]
             kv = self.kv_caches[batch_size]
-            return self.wrapped_model.run_with_cache(*args, past_kv_cache=kv, **kwargs)
+            return self.wrapped_model.run_with_cache(*args, past_key_values=deepcopy(kv), **kwargs)
 
     def input_to_embed(self, *args: Any, **kwargs: Any) -> Any:
         """
@@ -164,9 +168,8 @@ class PatchableModel(t.nn.Module):
         if self.kv_caches is None:
             return self.wrapped_model.input_to_embed(*args, **kwargs)
         else:
-            batch_size = args[0].shape[0]
-            kv = self.kv_caches[batch_size]
-            return self.wrapped_model.input_to_embed(*args, past_kv_cache=kv, **kwargs)
+            # The bridge input_to_embed does not accept a KV cache.
+            return self.wrapped_model.input_to_embed(*args, **kwargs)
 
     def new_prune_scores(self, init_val: float = 0.0) -> PruneScores:
         """

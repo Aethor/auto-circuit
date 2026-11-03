@@ -11,8 +11,8 @@ from torch.utils.data import (
     Dataset,
     Subset,
 )
-from transformer_lens.past_key_value_caching import HookedTransformerKeyValueCache
-from transformer_lens.utils import get_attention_mask
+from transformers.cache_utils import Cache
+from transformer_lens.utilities import get_attention_mask
 
 BatchKey = int
 """A unique key for a [`PromptPairBatch`][auto_circuit.data.PromptPairBatch]."""
@@ -147,7 +147,7 @@ class PromptDataLoader(DataLoader[PromptPairBatch]):
         prompt_dataset: Any,
         seq_len: Optional[int],
         diverge_idx: int,
-        kv_cache: Optional[HookedTransformerKeyValueCache] = None,
+        kv_cache: Optional[Cache] = None,
         seq_labels: Optional[List[str]] = None,
         word_idxs: Dict[str, int] = {},
         **kwargs: Any,
@@ -373,18 +373,17 @@ def load_datasets_from_json(
             if isinstance(batch_size, tuple):
                 prefixs.append(clean_prompts[: (bs0 := batch_size[0]), :diverge_idx])
                 prefixs.append(clean_prompts[: (bs1 := batch_size[1]), :diverge_idx])
-                kvs.append(HookedTransformerKeyValueCache.init_cache(cfg, device, bs0))
-                kvs.append(HookedTransformerKeyValueCache.init_cache(cfg, device, bs1))
             else:
                 prefixs.append(clean_prompts[:batch_size, :diverge_idx])
-                kvs.append(
-                    HookedTransformerKeyValueCache.init_cache(cfg, device, batch_size)
-                )
 
-            for prefix, kv_cache in zip(prefixs, kvs):
+            for prefix in prefixs:
                 with t.inference_mode():
-                    model(prefix, past_kv_cache=kv_cache)
-                kv_cache.freeze()
+                    _, kv_cache = model(prefix, return_type="logits_and_cache")
+                if not isinstance(kv_cache, Cache):
+                    raise NotImplementedError(
+                        "Prefix caching requires an HF-backed bridge with a native KV cache"
+                    )
+                kvs.append(kv_cache)
 
             print("seq_len before divergence", seq_len)
             if return_seq_length:

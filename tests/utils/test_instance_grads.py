@@ -2,7 +2,7 @@
 
 
 import torch as t
-from transformer_lens import HookedTransformer
+from transformer_lens.model_bridge import TransformerBridge as HookedTransformer
 
 from auto_circuit.tasks import Task
 from auto_circuit.types import AblationType, PruneScores

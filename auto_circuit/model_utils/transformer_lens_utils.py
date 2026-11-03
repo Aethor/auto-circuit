@@ -1,12 +1,25 @@
 from itertools import count
 from typing import Set, Tuple
 
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.types import DestNode, SrcNode
 
 
-def factorized_src_nodes(model: tl.HookedTransformer) -> Set[SrcNode]:
+def enable_graph_hooks(model: TransformerBridge, separate_qkv: bool = True) -> None:
+    """Enable validated GPT-2 fork hooks before constructing a graph."""
+    if model.cfg.architecture != "GPT2LMHeadModel":
+        raise NotImplementedError(
+            f"Graph hooks are validated only for GPT2LMHeadModel, not "
+            f"{model.cfg.architecture!r}"
+        )
+    model.set_use_attn_result(True)
+    model.set_use_split_qkv_input(separate_qkv)
+    model.set_use_attn_in(not separate_qkv)
+    model.set_use_hook_mlp_in(True)
+
+
+def factorized_src_nodes(model: TransformerBridge) -> Set[SrcNode]:
     """
     Get the source part of each edge in the factorized graph, grouped by layer.
 
@@ -61,7 +74,7 @@ def factorized_src_nodes(model: tl.HookedTransformer) -> Set[SrcNode]:
 
 
 def factorized_dest_nodes(
-    model: tl.HookedTransformer, separate_qkv: bool
+    model: TransformerBridge, separate_qkv: bool
 ) -> Set[DestNode]:
     """
     Get the destination part of each edge in the factorized graph, grouped by layer.
@@ -129,7 +142,7 @@ def factorized_dest_nodes(
 
 
 def simple_graph_nodes(
-    model: tl.HookedTransformer,
+    model: TransformerBridge,
 ) -> Tuple[Set[SrcNode], Set[DestNode]]:
     """
     Get the nodes of the unfactorized graph.

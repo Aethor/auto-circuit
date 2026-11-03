@@ -1,5 +1,6 @@
 # %%
 import math
+from copy import deepcopy
 from datetime import datetime
 from math import pi
 from typing import Dict
@@ -7,10 +8,9 @@ from typing import Dict
 import plotly.express as px
 import plotly.graph_objs as go
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 from plotly.subplots import make_subplots
 from torch.nn.functional import kl_div, log_softmax, relu
-from transformer_lens import HookedTransformerKeyValueCache
 
 from auto_circuit.data import PromptDataLoader, load_datasets_from_json
 from auto_circuit.model_utils.task_projectors.projector_transformer import (
@@ -35,7 +35,7 @@ regularize_const = temp * math.log(-left / right)
 
 
 def train_model(
-    model: tl.HookedTransformer,
+    model: TransformerBridge,
     dataloader: PromptDataLoader,
     input_act: AutoencoderInput,
     layernorm: bool,
@@ -55,14 +55,12 @@ def train_model(
     for batch in (batch_pbar := tqdm(dataloader)):
         tks = batch.clean.to(device)
         batch_size = tks.shape[0]
-        kv_cache = HookedTransformerKeyValueCache.init_cache(
-            model.cfg, model.cfg.device, batch_size
-        )
         common_prefix_batch = tks[:, : batch.batch_diverge_idx]
         with t.inference_mode():
-            model(common_prefix_batch, past_kv_cache=kv_cache)
+            _, kv_cache = model(common_prefix_batch, return_type="logits_and_cache")
             default_logprobs[batch.key] = log_softmax(model(tks)[:, -1], dim=-1).clone()
-        kv_cache.freeze()
+        if kv_cache is None:
+            raise NotImplementedError("Projector prefix caching requires an HF bridge")
         kv_caches[batch_size] = kv_cache
 
     model.cfg.use_attn_in = True
@@ -102,7 +100,7 @@ def train_model(
             kv_cache = kv_caches[toks.shape[0]]
             toks = toks[:, batch.batch_diverge_idx :]
             optim.zero_grad()
-            final_tok_logits = projector_model(toks, past_kv_cache=kv_cache)[:, -1]
+            final_tok_logits = projector_model(toks, past_key_values=deepcopy(kv_cache))[:, -1]
             proj_logprobs = log_softmax(final_tok_logits, dim=-1)
             # nll = (-(default_probs * proj_logprobs).sum(dim=-1)).mean()
             kl = kl_div(
@@ -154,7 +152,7 @@ input_act: AutoencoderInput = "resid"
 seq_start_idx = 13
 layernorm = False
 
-model = tl.HookedTransformer.from_pretrained_no_processing(model_name, device="cpu")
+model = TransformerBridge.boot_transformers(model_name, device="cpu")
 assert model.cfg.device is not None
 train_dataloader, test_dataloader = load_datasets_from_json(
     model,
@@ -196,7 +194,7 @@ for layer, projector in zip(projector_model.layer_idxs, projector_model.projecto
     dt_string = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     t.save(projector.state_dict(), folder / f"{filename}-{dt_string}.pt")
 # %%
-model = tl.HookedTransformer.from_pretrained_no_processing(model_name, device="cpu")
+model = TransformerBridge.boot_transformers(model_name, device="cpu")
 model.cfg.use_attn_in = True
 # %%
 default_logprobs = []
@@ -207,13 +205,11 @@ dataloader = test_dataloader
 for batch in (batch_pbar := tqdm(dataloader)):
     tks = batch.clean.to(model.cfg.device)
     batch_size = tks.shape[0]
-    kv_cache = HookedTransformerKeyValueCache.init_cache(
-        model.cfg, model.cfg.device, batch_size
-    )
     common_prefix_batch = tks[:, : batch.batch_diverge_idx]
     with t.inference_mode():
-        model(common_prefix_batch, past_kv_cache=kv_cache)
-    kv_cache.freeze()
+        _, kv_cache = model(common_prefix_batch, return_type="logits_and_cache")
+    if kv_cache is None:
+        raise NotImplementedError("Projector prefix caching requires an HF bridge")
     test_kv_caches[batch_size] = kv_cache
 
 for batch in dataloader:
@@ -221,7 +217,7 @@ for batch in dataloader:
     toks = batch.clean[:, batch_diverge_idx:]
     batch_size = toks.shape[0]
     kv_cache = test_kv_caches[batch_size]
-    proj_out = projector_model(toks, past_kv_cache=kv_cache)[:, -1]
+    proj_out = projector_model(toks, past_key_values=deepcopy(kv_cache))[:, -1]
     projected_logprobs.append(log_softmax(proj_out, dim=-1))
 
     for tok, proj in zip(toks, proj_out):

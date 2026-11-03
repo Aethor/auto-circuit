@@ -7,7 +7,7 @@ from itertools import count
 from typing import Any, List, Optional, Set
 
 import torch as t
-from transformer_lens import HookedTransformer
+from transformer_lens.model_bridge import TransformerBridge
 
 from auto_circuit.data import PromptDataLoader
 from auto_circuit.model_utils.sparse_autoencoders.sparse_autoencoder import (
@@ -25,7 +25,7 @@ class AutoencoderTransformer(t.nn.Module):
 
     def __init__(self, wrapped_model: t.nn.Module, saes: List[SparseAutoencoder]):
         super().__init__()
-        self.sparse_autoencoders = saes
+        self.sparse_autoencoders = t.nn.ModuleList(saes)
 
         if isinstance(wrapped_model, PatchableModel):
             self.wrapped_model = wrapped_model.wrapped_model
@@ -149,7 +149,7 @@ class AutoencoderTransformer(t.nn.Module):
 
 
 def sae_model(
-    model: HookedTransformer,
+    model: TransformerBridge,
     sae_input: AutoencoderInput,
     load_pretrained: bool,
     n_latents: Optional[int] = None,
@@ -176,12 +176,17 @@ def sae_model(
             hook_name = "hook_mlp_out"
         if load_pretrained:
             assert pythia_size is not None
-            sae = load_autoencoder(hook_point, model, layer_idx, sae_input, pythia_size)
+            sae = load_autoencoder(t.nn.Identity(), model, layer_idx, sae_input, pythia_size)
         else:
             assert n_latents is not None
-            sae = SparseAutoencoder(hook_point, n_latents, model.cfg.d_model)
+            n_inputs = (
+                model.cfg.d_mlp if sae_input == "mlp_post_act" else model.cfg.d_model
+            )
+            sae = SparseAutoencoder(t.nn.Identity(), n_latents, n_inputs)
         sae.to(model.cfg.device)
-        setattr(hook_module, hook_name, sae)
+        hook_point.add_hook(
+            lambda activation, hook, sae=sae: sae(activation), is_permanent=True
+        )
         sparse_autoencoders.append(sae)
     return AutoencoderTransformer(model, sparse_autoencoders)
 

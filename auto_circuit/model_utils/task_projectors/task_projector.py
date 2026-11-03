@@ -74,7 +74,7 @@ class TaskProjector(t.nn.Module):
         # rotation_matrix = RotationMatrix(n_inputs, seq_len)
         # self.rotation = parametrizations.orthogonal(rotation_matrix, "weight")
         # t.nn.init.orthogonal_(self.rotation.weight)
-        linear = t.eye(n_inputs).unsqueeze(0).repeat(seq_shape + [1, 1])
+        linear = t.eye(n_inputs).repeat(seq_shape + [1, 1])
         self.linear = t.nn.Parameter(linear)
         # t.nn.init.orthogonal_(self.linear)
         register_parametrization(self, "linear", Symmetric())  # type: ignore

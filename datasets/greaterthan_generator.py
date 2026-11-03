@@ -2,7 +2,7 @@
 import json
 
 import torch as t
-import transformer_lens as tl
+from transformer_lens.model_bridge import TransformerBridge
 
 NOUNS = [
     "abduction",
@@ -196,7 +196,7 @@ def get_year_data(num_examples, model):
 
 
 model_name = "gpt2-small"
-model = tl.HookedTransformer.from_pretrained("gpt2-small")
+model = TransformerBridge.boot_transformers("gpt2")
 prompt_dicts = get_year_data(1000, model)
 data_json = {"prompts": prompt_dicts}
 

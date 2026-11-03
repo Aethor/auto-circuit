@@ -6,12 +6,14 @@ from itertools import chain, product
 from typing import Collection, Dict, Iterator, List, Optional, Set, Tuple
 
 import torch as t
-from transformer_lens import HookedTransformer, HookedTransformerKeyValueCache
+from transformer_lens.hook_points import HookPoint
+from transformer_lens.model_bridge import TransformerBridge
 
 import auto_circuit.model_utils.micro_model_utils as mm_utils
 import auto_circuit.model_utils.sparse_autoencoders.autoencoder_transformer as sae_utils
 import auto_circuit.model_utils.transformer_lens_utils as tl_utils
 from auto_circuit.model_utils.micro_model_utils import MicroModel
+from auto_circuit.model_utils.task_projectors.projector_transformer import ProjectorTransformer
 from auto_circuit.model_utils.sparse_autoencoders.autoencoder_transformer import (
     AutoencoderTransformer,
 )
@@ -38,7 +40,7 @@ def patchable_model(
     slice_output: OutputSlice = None,
     seq_len: Optional[int] = None,
     separate_qkv: Optional[bool] = None,
-    kv_caches: Tuple[Optional[HookedTransformerKeyValueCache], ...] = (None,),
+    kv_caches: Tuple[Optional[object], ...] = (None,),
     device: t.device = t.device("cpu"),
 ) -> PatchableModel:
     """
@@ -67,6 +69,24 @@ def patchable_model(
         This function modifies the model, it does not return a new model.
     """
     assert not isinstance(model, PatchableModel), "Model is already patchable"
+    if isinstance(model, TransformerBridge):
+        if not factorized:
+            raise NotImplementedError(
+                "Unfactorized bridge graphs have not passed intervention parity tests"
+            )
+        # A hook name existing in hook_dict does not imply that the fork fires.
+        # Only the GPT-2 bridge's residual and per-head fork has been validated.
+        if model.cfg.architecture != "GPT2LMHeadModel":
+            raise NotImplementedError(
+                f"Graph patching is validated only for GPT2LMHeadModel bridges, "
+                f"not {model.cfg.architecture!r}"
+            )
+        if not model.cfg.use_attn_result or not model.cfg.use_hook_mlp_in:
+            raise ValueError("Enable attention-result and MLP-input hooks before patching")
+        if separate_qkv and not model.cfg.use_split_qkv_input:
+            raise ValueError("Enable split QKV input hooks before patching")
+        if separate_qkv is False and not model.cfg.use_attn_in and factorized:
+            raise ValueError("Enable attention-input hooks before patching")
     nodes, srcs, dests, edge_dict, edges, seq_dim, seq_len = graph_edges(
         model, factorized, separate_qkv, seq_len
     )
@@ -78,7 +98,7 @@ def patchable_model(
     else:
         last_slice = [-1] if slice_output == "last_seq" else [slice(1, None)]
         out_slice: Tuple[slice | int, ...] = tuple([slice(None)] * seq_dim + last_slice)
-    is_tl_transformer = isinstance(model, HookedTransformer)
+    is_tl_transformer = isinstance(model, TransformerBridge)
     is_autoencoder_transformer = isinstance(model, AutoencoderTransformer)
     is_transformer = is_tl_transformer or is_autoencoder_transformer
     return PatchableModel(
@@ -143,12 +163,20 @@ def graph_edges(
                 <li>The sequence length of the model inputs.</li>
             </ol>
     """
+    if isinstance(model, AutoencoderTransformer):
+        raise NotImplementedError(
+            "SAE latent graph patching is not validated on TransformerBridge"
+        )
+    if isinstance(model, ProjectorTransformer):
+        raise NotImplementedError(
+            "Projector graph patching is not validated on TransformerBridge"
+        )
     seq_dim = 1
     edge_dict: Dict[Optional[int], List[Edge]] = defaultdict(list)
     if not factorized:
         if isinstance(model, MicroModel):
             srcs, dests = mm_utils.simple_graph_nodes(model)
-        elif isinstance(model, HookedTransformer):
+        elif isinstance(model, TransformerBridge):
             srcs, dests = tl_utils.simple_graph_nodes(model)
         else:
             raise NotImplementedError(model)
@@ -159,7 +187,7 @@ def graph_edges(
         if isinstance(model, MicroModel):
             srcs: Set[SrcNode] = mm_utils.factorized_src_nodes(model)
             dests: Set[DestNode] = mm_utils.factorized_dest_nodes(model)
-        elif isinstance(model, HookedTransformer):
+        elif isinstance(model, TransformerBridge):
             assert separate_qkv is not None, "separate_qkv must be specified for LLM"
             srcs: Set[SrcNode] = tl_utils.factorized_src_nodes(model)
             dests: Set[DestNode] = tl_utils.factorized_dest_nodes(model, separate_qkv)
@@ -222,7 +250,16 @@ def make_model_patchable(
     dtype = next(model.parameters()).dtype
 
     for module_name, module_nodes in node_dict.items():
-        module = module_by_name(model, module_name)
+        bridge_hook = None
+        if isinstance(model, TransformerBridge):
+            bridge_hook = model.hook_dict.get(module_name)
+            if not isinstance(bridge_hook, HookPoint):
+                raise ValueError(f"No live bridge HookPoint at {module_name}")
+            # Never replace a bridge module: its forward executes the HookPoint
+            # registered in hook_dict, which would otherwise bypass our wrapper.
+            module = t.nn.Identity()
+        else:
+            module = module_by_name(model, module_name)
         src_idxs_slice = None
         a_node = next(iter(module_nodes))
         head_dim = a_node.head_dim
@@ -259,7 +296,13 @@ def make_model_patchable(
             patch_mask=mask,
             in_srcs=in_srcs,
         )
-        set_module_by_name(model, module_name, wrapper)
+        if bridge_hook is not None:
+            bridge_hook.add_hook(
+                lambda activation, hook, wrapper=wrapper: wrapper(activation),
+                is_permanent=True,
+            )
+        else:
+            set_module_by_name(model, module_name, wrapper)
         wrappers.add(wrapper)
         src_wrappers.add(wrapper) if is_src else None
         dest_wrappers.add(wrapper) if is_dest else None

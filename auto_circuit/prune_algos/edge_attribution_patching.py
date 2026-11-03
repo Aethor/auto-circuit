@@ -1,7 +1,7 @@
 from typing import Optional, Set
 
 import torch as t
-import transformer_lens as tl
+from transformer_lens.hook_points import HookPoint
 
 from auto_circuit.data import PromptDataLoader
 from auto_circuit.types import Edge, PruneScores
@@ -62,7 +62,7 @@ def edge_attribution_patching_prune_scores(
     for batch in dataloader:
         clean_grad_cache = {}
 
-        def backward_cache_hook(act: t.Tensor, hook: tl.hook_points.HookPoint):
+        def backward_cache_hook(act: t.Tensor, hook: HookPoint):
             clean_grad_cache[hook.name] = act.detach()
 
         incoming_ends = [
